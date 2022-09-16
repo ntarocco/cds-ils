@@ -100,6 +100,15 @@ class SeriesImporter(object):
 
         return existing_identifiers + new_identifiers
 
+    @staticmethod
+    def _normalize_title(title):
+        """Return a normalized title."""
+        return title \
+            .lower() \
+            .replace(" series", "") \
+            .replace(" Series", "") \
+            .strip()
+
     def update_series(self, matched_series, json_series):
         """Update series record."""
         matched_series["identifiers"] = self._update_field_identifiers(
@@ -150,8 +159,6 @@ class SeriesImporter(object):
             if identifier["scheme"] == "ISBN"
         ]
 
-        title = json_series.get("title", None)
-
         matches = set()
         # search matching series by ISSN
         for issn in issn_list:
@@ -163,14 +170,13 @@ class SeriesImporter(object):
             matches.update({x.pid for x in search.scan()})
 
         # search matching series by title
+        title = json_series.get("title", None)
         if title:
+            title = title.lower().strip()
             search = search_series_by_title(title)
             if search.count() == 0:
                 # check for known inconsistencies in title
-                simplified_title = title \
-                    .replace(" series", "") \
-                    .replace(" Series", "") \
-                    .strip()
+                simplified_title = self._normalize_title(title)
                 search = search_series_by_title(simplified_title)
 
             matches.update({x.pid for x in search.scan()})
@@ -221,14 +227,17 @@ class SeriesImporter(object):
             return is_serial and is_type_serial
 
         matches = list(filter(filter_non_serials, matches))
-
         validated_matches = set()
+
+        # matching by exact title takes precedence over anything else
         json_series_title = json_series.get("title", "").lower().strip()
         for match in matches:
             series = all_series[match]
-            # matching by exact title takes precedence over anything else
-            is_same_title = series["title"].lower().strip() == \
-                json_series_title
+            series_title = series["title"].lower().strip()
+
+            is_same_title = series_title == json_series_title or \
+                self._normalize_title(series_title) == \
+                            self._normalize_title(json_series_title)
             if is_same_title:
                 validated_matches.add(match)
 
